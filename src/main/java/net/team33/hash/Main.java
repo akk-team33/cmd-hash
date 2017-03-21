@@ -1,90 +1,37 @@
 package net.team33.hash;
 
-import java.io.IOException;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Logger;
+import net.team33.hash.files.Walk;
 
-import static java.util.logging.Level.INFO;
-import static java.util.logging.Level.WARNING;
+import java.io.IOException;
+import java.nio.file.Paths;
+import java.util.stream.Stream;
 
 @SuppressWarnings("UseOfSystemOutOrSystemErr")
 public final class Main {
 
-    private static final Logger LOGGER
-            = Logger.getLogger(Main.class.getCanonicalName());
-    private static final ExecutorService EXECUTOR
-            = Executors.newWorkStealingPool(4 + (4 * Runtime.getRuntime().availableProcessors()));
-    private static final Activity ACTIVITY
-            = new Activity();
-    private static final AtomicInteger MOVED = new AtomicInteger();
-    private static final AtomicInteger FAILED = new AtomicInteger();
-
-    private Main() {
-    }
-
     public static void main(final String[] args) throws IOException, InterruptedException {
-        rename(
-                Paths.get(args[0]).toAbsolutePath().normalize(), Paths.get(args[1]).toAbsolutePath().normalize()
-        );
-        ACTIVITY.join();
-        LOGGER.info("MOVED:  " + MOVED + " files");
-        LOGGER.info("FAILED: " + FAILED + " files");
-    }
+        final long time0 = System.currentTimeMillis();
+        final Context context = new Context();
+        Stream.of(args)
+                .map(arg -> Paths.get(arg).toAbsolutePath().normalize())
+                .forEach(path -> Walk.through(path)
+                        .whenRegular(context::performRegular)
+                        .whenDirectory(context::performDirectory)
+                        .whenSpecial(context::ignore)
+                        .onProblems(context::onProblem)
+                        .build().run());
 
-    private static void rename(final Path sievedRoot, final Iterator<Path> iterator) {
-        final List<Path> paths = new LinkedList<>();
-        while (iterator.hasNext()) {
-            paths.add(iterator.next());
-        }
-        rename(sievedRoot, paths);
-    }
+        System.out.printf("%nRegular files (%d):%n", context.pathsMap.size());
+        context.pathsMap.entrySet().stream()
+                .filter(e -> 1 < e.getValue().size())
+                .forEach(e -> System.out.printf("%s (%d): %s%n", e.getKey(), e.getValue().size(), e.getValue()));
 
-    private static void rename(final Path sievedRoot, final List<Path> paths) {
-        for (final Path path : paths) {
-            EXECUTOR.execute(ACTIVITY.add(() -> rename(path, sievedRoot)));
-        }
-    }
+        System.out.printf("%nIgnored (%d):%n", context.ignored.size());
+        context.ignored.forEach(System.out::println);
 
-    private static void rename(final Path path, final Path sievedRoot) {
-        if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-            renameRegularFile(path, sievedRoot);
-        } else if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
-            renameContent(path, sievedRoot);
-        } else {
-            LOGGER.log(INFO, String.format("Not a regular file or directory: <%s>", path));
-        }
-    }
+        System.out.printf("%nProblems (%d):%n", context.problems.size());
+        context.problems.forEach(problem -> problem.printStackTrace(System.out));
 
-    private static void renameContent(final Path path, final Path sievedRoot) {
-        try (DirectoryStream<Path> paths = Files.newDirectoryStream(path)) {
-            if (!path.equals(sievedRoot)) {
-                rename(sievedRoot, paths.iterator());
-            }
-        } catch (final IOException e) {
-            LOGGER.log(WARNING, String.format("Could not read directory <%s>", path), e);
-        }
-    }
-
-    private static void renameRegularFile(final Path path, final Path sievedRoot) {
-        try {
-            final Naming naming = new Naming(path);
-            final Path target = naming.resolve(sievedRoot);
-            Files.move(path, target);
-            MOVED.addAndGet(1);
-            LOGGER.log(INFO, String.format("Moved <%s>\n\t-> <%s>", path, target));
-        } catch (final IOException e) {
-            FAILED.addAndGet(1);
-            LOGGER.log(WARNING, String.format("Could not access or rename <%s>", path), e);
-        }
+        System.out.printf("%n%s seconds%n", (System.currentTimeMillis() - time0) / 1000);
     }
 }
