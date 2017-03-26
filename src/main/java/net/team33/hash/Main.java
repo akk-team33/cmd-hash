@@ -19,7 +19,7 @@ import java.util.stream.Stream;
 @SuppressWarnings("UseOfSystemOutOrSystemErr")
 public final class Main {
 
-    private final Cache cache = new Cache();
+    private final Registry registry = new Registry();
     private final Map<BigInteger, List<Path>> pathsMap = new HashMap<>();
     private final List<Throwable> problems = new LinkedList<>();
     private final List<Path> ignored = new LinkedList<>();
@@ -53,18 +53,22 @@ public final class Main {
     }
 
     private void process(final Path path) {
-        if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+        if (Registry.FILE_NAME.equals(path.getFileName().toString())) {
+            ignored.add(path);
+        } else if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
             onDirectory(path);
         } else if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
             onRegular(path);
         } else {
-            onOther(path);
+            ignored.add(path);
         }
     }
 
     private void onDirectory(final Path path) {
         try (final DirectoryStream<Path> paths = Files.newDirectoryStream(path)) {
             process(paths.iterator());
+            registry.write(path);
+            registry.remove(path);
         } catch (final IOException e) {
             problems.add(e);
             ignored.add(path);
@@ -74,8 +78,8 @@ public final class Main {
     private void onRegular(final Path path) {
         System.out.print(path);
         System.out.print(" ... ");
-        final Cache.Entry entry = cache.entry(path.getParent());
-        final Cache.Details details = entry.details(path.getFileName().toString());
+        final Registry.Entry entry = registry.entry(path.getParent());
+        final Registry.Details details = entry.details(path.getFileName().toString());
         try {
             final long timeStamp = Files.getLastModifiedTime(path, LinkOption.NOFOLLOW_LINKS).toMillis();
             if (details.getUpdate() < timeStamp) {
@@ -88,10 +92,6 @@ public final class Main {
             problems.add(caught);
             System.out.println(caught.getMessage());
         }
-    }
-
-    private void onOther(final Path path) {
-        ignored.add(path);
     }
 
     private List<Path> paths(final BigInteger hash) {
