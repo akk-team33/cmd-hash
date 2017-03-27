@@ -13,6 +13,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -23,6 +24,8 @@ public final class Main {
     private final Map<BigInteger, List<Path>> pathsMap = new HashMap<>();
     private final List<Throwable> problems = new LinkedList<>();
     private final List<Path> ignored = new LinkedList<>();
+    private final List<Path> failed = new LinkedList<>();
+    private final List<Path> skipped = new LinkedList<>();
 
     public static void main(final String[] args) throws IOException, InterruptedException {
         final long time0 = System.currentTimeMillis();
@@ -37,13 +40,23 @@ public final class Main {
                 .filter(e -> 1 < e.getValue().size())
                 .forEach(e -> System.out.printf("%s (%d): %s%n", e.getKey(), e.getValue().size(), e.getValue()));
 
-        System.out.printf("%nIgnored (%d):%n", main.ignored.size());
-        main.ignored.forEach(System.out::println);
-
-        System.out.printf("%nProblems (%d):%n", main.problems.size());
-        main.problems.forEach(problem -> problem.printStackTrace(System.out));
+        //print(main.ignored);
+        print(main.failed);
+        print(main.skipped);
+        print(main.problems, "%nProblems (%d):%n", problem -> problem.printStackTrace(System.out));
 
         System.out.printf("%n%s seconds%n", (System.currentTimeMillis() - time0) / 1000);
+    }
+
+    private static void print(final List<?> collected) {
+        print(collected, "%nIgnored (%d):%n", System.out::println);
+    }
+
+    private static <T> void print(final List<T> collected, final String format, final Consumer<T> consumer) {
+        if (collected.size() > 0) {
+            System.out.printf(format, collected.size());
+            collected.forEach(consumer);
+        }
     }
 
     private void process(final Iterator<Path> paths) {
@@ -60,7 +73,7 @@ public final class Main {
         } else if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
             onRegular(path);
         } else {
-            ignored.add(path);
+            skipped.add(path);
         }
     }
 
@@ -71,7 +84,7 @@ public final class Main {
             registry.remove(path);
         } catch (final IOException e) {
             problems.add(e);
-            ignored.add(path);
+            failed.add(path);
         }
     }
 
