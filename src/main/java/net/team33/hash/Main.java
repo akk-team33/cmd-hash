@@ -124,6 +124,14 @@ public final class Main {
             problems.add(e);
             failed.add(path);
         }
+        removeIfEmpty(path);
+    }
+
+    private void removeIfEmpty(final Path path) {
+        try {
+            Files.delete(path);
+        } catch (final IOException ignored) {
+        }
     }
 
     private void onRegular(final Path path) {
